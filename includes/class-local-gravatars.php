@@ -207,7 +207,6 @@ class LocalGravatars {
 	public function schedule_cleanup() {
 		if ( ! is_multisite() || ( is_multisite() && is_main_site() ) ) {
 			if ( ! wp_next_scheduled( 'delete_gravatars_folder' ) && ! wp_installing() ) {
-				error_log( 'Scheduling cleanup' );
 				wp_schedule_event(
 					time(),
 					apply_filters( 'get_local_gravatars_cleanup_frequency', self::CLEANUP_FREQUENCY ),
