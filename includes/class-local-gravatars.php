@@ -52,6 +52,22 @@ class LocalGravatars {
 	const MAX_PROCESS_TIME = 5;
 
 	/**
+	 * Allowed image file extensions mapped to their MIME types.
+	 *
+	 * @since 1.1.3
+	 */
+	const ALLOWED_EXTENSIONS = [
+		'jpg'  => 'image/jpeg',
+		'jpeg' => 'image/jpeg',
+		'png'  => 'image/png',
+		'gif'  => 'image/gif',
+		'webp' => 'image/webp',
+		'svg'  => 'image/svg+xml',
+		'bmp'  => 'image/bmp',
+		'tiff' => 'image/tiff',
+	];
+
+	/**
 	 * Start time of all processes.
 	 *
 	 * @static
@@ -331,7 +347,7 @@ class LocalGravatars {
 	 * @return string
 	 */
 	public function get_fallback_url() {
-		return apply_filters( 'get_local_gravatars_fallback_url', '', $this->remote_url );
+		return apply_filters( 'get_local_gravatars_fallback_url', $this->remote_url );
 	}
 
 	/**
@@ -396,16 +412,8 @@ class LocalGravatars {
 			return 'jpg';
 		}
 
-		$mime_to_extension = [
-			'image/jpeg' => 'jpg',
-			'image/jpg' => 'jpg',
-			'image/png' => 'png',
-			'image/gif' => 'gif',
-			'image/webp' => 'webp',
-			'image/svg+xml' => 'svg',
-			'image/bmp' => 'bmp',
-			'image/tiff' => 'tiff',
-		];
+		// Get MIME type to extension mapping by flipping the constant.
+		$mime_to_extension = array_flip( self::ALLOWED_EXTENSIONS );
 
 		// Return detected extension or default to jpg.
 		return isset( $mime_to_extension[ $mime_type ] ) ? $mime_to_extension[ $mime_type ] : 'jpg';
@@ -423,11 +431,8 @@ class LocalGravatars {
 	 */
 	private function find_existing_avatar_file( $base_filename ) {
 
-		// Common image extensions to check.
-		$extensions = [ 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff' ];
-
-		// Check each extension.
-		foreach ( $extensions as $ext ) {
+		// Check each allowed extension.
+		foreach ( array_keys( self::ALLOWED_EXTENSIONS ) as $ext ) {
 			$filename = $base_filename . '.' . $ext;
 			$file_path = $this->get_base_path() . '/' . $filename;
 

@@ -24,7 +24,7 @@ LocalGravatars::init();
  * Process a URL and replace it with the local gravatar URL.
  *
  * @param string $url The URL to process.
- * @return string The local gravatar URL or the original URL if processing failed.
+ * @return string The local gravatar URL, or the filtered fallback URL if processing failed.
  */
 function local_gravatars_process_url( $url ) {
 	$local_gravatars = new LocalGravatars( $url );
