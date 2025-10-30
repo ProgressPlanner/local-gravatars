@@ -20,5 +20,5 @@ if ( ! \defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 $local_gravatars = new LocalGravatars( '' );
 $local_gravatars->delete_gravatars_folder();
 
-// Clear the cron job.
-wp_unschedule_event( wp_next_scheduled( 'delete_gravatars_folder' ), 'delete_gravatars_folder' );
+// Clear all scheduled cron jobs.
+wp_clear_scheduled_hook( 'delete_gravatars_folder' );

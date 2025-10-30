@@ -31,15 +31,6 @@ class LocalGravatars {
 	protected $base_path;
 
 	/**
-	 * Subfolder name.
-	 *
-	 * @access protected
-	 * @since 1.1.0
-	 * @var string
-	 */
-	protected $subfolder_name;
-
-	/**
 	 * Base URL.
 	 *
 	 * @access protected
@@ -49,28 +40,19 @@ class LocalGravatars {
 	protected $base_url;
 
 	/**
-	 * The gravatars folder.
-	 *
-	 * @access protected
-	 * @since 1.1.0
-	 * @var string
-	 */
-	protected $gravatars_folder;
-
-	/**
 	 * Cleanup routine frequency.
 	 */
 	const CLEANUP_FREQUENCY = 'weekly';
 
 	/**
-	 * Maxiumum process seconds.
+	 * Maximum process seconds.
 	 *
 	 * @since 1.0
 	 */
 	const MAX_PROCESS_TIME = 5;
 
 	/**
-	 * Start tim of all processes.
+	 * Start time of all processes.
 	 *
 	 * @static
 	 *
@@ -106,10 +88,30 @@ class LocalGravatars {
 	 */
 	public function __construct( $url = '' ) {
 		$this->remote_url = $url;
+	}
+
+	/**
+	 * Initialize hooks and schedules.
+	 *
+	 * Should be called once during plugin initialization.
+	 *
+	 * @access public
+	 * @since 1.1.3
+	 * @return void
+	 */
+	public static function init() {
+		static $initialized = false;
+
+		if ( $initialized ) {
+			return;
+		}
+
+		$initialized = true;
 
 		// Add a cleanup routine.
-		$this->schedule_cleanup();
-		add_action( 'delete_gravatars_folder', array( $this, 'delete_gravatars_folder' ) );
+		$instance = new self();
+		$instance->schedule_cleanup();
+		add_action( 'delete_gravatars_folder', array( $instance, 'delete_gravatars_folder' ) );
 	}
 
 	/**
@@ -126,6 +128,11 @@ class LocalGravatars {
 			return $this->get_fallback_url();
 		}
 
+		// Validate that this is a Gravatar URL.
+		if ( ! $this->is_valid_gravatar_url( $this->remote_url ) ) {
+			return $this->get_fallback_url();
+		}
+
 		// If the gravatars folder doesn't exist, create it.
 		if ( ! file_exists( $this->get_base_path() ) ) {
 			$this->get_filesystem()->mkdir( $this->get_base_path(), FS_CHMOD_DIR );
@@ -136,6 +143,14 @@ class LocalGravatars {
 
 		// Remove any existing extension to ensure we detect the correct one.
 		$base_filename = pathinfo( $base_filename, PATHINFO_FILENAME );
+
+		// Sanitize the filename to prevent directory traversal.
+		$base_filename = sanitize_file_name( $base_filename );
+
+		// Early exit if sanitization removed everything.
+		if ( empty( $base_filename ) ) {
+			return $this->get_fallback_url();
+		}
 
 		// Check if the file already exists with any common extension.
 		$existing_file = $this->find_existing_avatar_file( $base_filename );
@@ -163,11 +178,13 @@ class LocalGravatars {
 			if ( ! $success ) {
 				return $this->get_fallback_url();
 			}
-		} else {
-			return $this->get_fallback_url();
+
+			// Return the URL to the local file.
+			return $this->get_base_url() . '/' . $filename;
 		}
 
-		return $this->get_base_url() . '/' . $filename;
+		// If we got here, download failed.
+		return $this->get_fallback_url();
 	}
 
 	/**
@@ -287,7 +304,7 @@ class LocalGravatars {
 			return false;
 		}
 
-		// Falback to true.
+		// Fallback to true.
 		return true;
 	}
 
@@ -318,6 +335,35 @@ class LocalGravatars {
 	}
 
 	/**
+	 * Validate if a URL is a valid Gravatar URL.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $url The URL to validate.
+	 * @return bool True if valid Gravatar URL, false otherwise.
+	 */
+	private function is_valid_gravatar_url( $url ) {
+		// Parse the URL.
+		$parsed_url = wp_parse_url( $url );
+
+		// Check if we have a host.
+		if ( ! isset( $parsed_url['host'] ) ) {
+			return false;
+		}
+
+		$host = strtolower( $parsed_url['host'] );
+
+		// Check if the host is gravatar.com or any subdomain (*.gravatar.com).
+		// This covers: gravatar.com, www.gravatar.com, secure.gravatar.com, 0-9.gravatar.com, etc.
+		$is_gravatar = ( 'gravatar.com' === $host || substr( $host, -13 ) === '.gravatar.com' );
+
+		// Allow filtering for edge cases.
+		return apply_filters( 'local_gravatars_is_valid_url', $is_gravatar, $url, $host );
+	}
+
+	/**
 	 * Detect file extension from downloaded file.
 	 *
 	 * @access private
@@ -336,10 +382,20 @@ class LocalGravatars {
 
 		// Get file info using finfo.
 		$finfo = finfo_open( FILEINFO_MIME_TYPE );
+
+		// Check if finfo_open failed.
+		if ( false === $finfo ) {
+			return 'jpg';
+		}
+
 		$mime_type = finfo_file( $finfo, $file_path );
 		finfo_close( $finfo );
 
-		// Map MIME types to extensions.
+		// Check if finfo_file failed.
+		if ( false === $mime_type ) {
+			return 'jpg';
+		}
+
 		$mime_to_extension = [
 			'image/jpeg' => 'jpg',
 			'image/jpg' => 'jpg',
