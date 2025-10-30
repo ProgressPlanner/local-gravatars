@@ -94,6 +94,19 @@ class LocalGravatars {
 	private static $has_stopped = false;
 
 	/**
+	 * Cache for existing avatar file lookups.
+	 *
+	 * @static
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @var array
+	 */
+	private static $file_cache = [];
+
+	/**
 	 * Constructor.
 	 *
 	 * Get a new instance of the object for a new URL.
@@ -422,6 +435,9 @@ class LocalGravatars {
 	/**
 	 * Find existing avatar file with any common extension.
 	 *
+	 * Caches results per request to avoid redundant file_exists() calls
+	 * when multiple avatars from the same user appear on a page.
+	 *
 	 * @access private
 	 *
 	 * @since 1.1.3
@@ -431,16 +447,25 @@ class LocalGravatars {
 	 */
 	private function find_existing_avatar_file( $base_filename ) {
 
+		// Check cache first.
+		if ( isset( self::$file_cache[ $base_filename ] ) ) {
+			return self::$file_cache[ $base_filename ];
+		}
+
 		// Check each allowed extension.
 		foreach ( array_keys( self::ALLOWED_EXTENSIONS ) as $ext ) {
 			$filename = $base_filename . '.' . $ext;
 			$file_path = $this->get_base_path() . '/' . $filename;
 
 			if ( file_exists( $file_path ) ) {
+				// Cache the result.
+				self::$file_cache[ $base_filename ] = $filename;
 				return $filename;
 			}
 		}
 
+		// Cache the negative result.
+		self::$file_cache[ $base_filename ] = false;
 		return false;
 	}
 }
