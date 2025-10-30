@@ -131,31 +131,42 @@ class LocalGravatars {
 			$this->get_filesystem()->mkdir( $this->get_base_path(), FS_CHMOD_DIR );
 		}
 
-		// Get the filename.
-		$filename = basename( wp_parse_url( $this->remote_url, PHP_URL_PATH ) );
+		// Get the base filename without extension.
+		$base_filename = basename( wp_parse_url( $this->remote_url, PHP_URL_PATH ) );
 
-		$path = $this->get_base_path() . '/' . $filename;
+		// Remove any existing extension to ensure we detect the correct one.
+		$base_filename = pathinfo( $base_filename, PATHINFO_FILENAME );
 
-		// Check if the file already exists.
-		if ( ! file_exists( $path ) ) {
-
-			// require file.php if the download_url function doesn't exist.
-			if ( ! function_exists( 'download_url' ) ) {
-				require_once wp_normalize_path( ABSPATH . '/wp-admin/includes/file.php' );
-			}
-
-			// Download file to temporary location.
-			$tmp_path = download_url( $this->remote_url );
-
-			// Make sure there were no errors.
-			if ( ! is_wp_error( $tmp_path ) ) {
-				// Move temp file to final destination.
-				$success = $this->get_filesystem()->move( $tmp_path, $path, true );
-				if ( ! $success ) {
-					return $this->get_fallback_url();
-				}
-			}
+		// Check if the file already exists with any common extension.
+		$existing_file = $this->find_existing_avatar_file( $base_filename );
+		if ( $existing_file ) {
+			return $this->get_base_url() . '/' . $existing_file;
 		}
+
+		// require file.php if the download_url function doesn't exist.
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once wp_normalize_path( ABSPATH . '/wp-admin/includes/file.php' );
+		}
+
+		// Download file to temporary location.
+		$tmp_path = download_url( $this->remote_url );
+
+		// Make sure there were no errors.
+		if ( ! is_wp_error( $tmp_path ) ) {
+			// Detect file extension from the downloaded file.
+			$file_extension = $this->detect_file_extension( $tmp_path );
+			$filename = $base_filename . '.' . $file_extension;
+			$path = $this->get_base_path() . '/' . $filename;
+
+			// Move temp file to final destination.
+			$success = $this->get_filesystem()->move( $tmp_path, $path, true );
+			if ( ! $success ) {
+				return $this->get_fallback_url();
+			}
+		} else {
+			return $this->get_fallback_url();
+		}
+
 		return $this->get_base_url() . '/' . $filename;
 	}
 
@@ -303,6 +314,72 @@ class LocalGravatars {
 	 * @return string
 	 */
 	public function get_fallback_url() {
-		return apply_filters( 'get_local_gravatars_fallback_url', $this->remote_url );
+		return apply_filters( 'get_local_gravatars_fallback_url', '', $this->remote_url );
+	}
+
+	/**
+	 * Detect file extension from downloaded file.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $file_path Path to the downloaded file.
+	 * @return string File extension (defaults to 'jpg' if detection fails).
+	 */
+	private function detect_file_extension( $file_path ) {
+
+		// Early exit if file doesn't exist.
+		if ( ! file_exists( $file_path ) ) {
+			return 'jpg';
+		}
+
+		// Get file info using finfo.
+		$finfo = finfo_open( FILEINFO_MIME_TYPE );
+		$mime_type = finfo_file( $finfo, $file_path );
+		finfo_close( $finfo );
+
+		// Map MIME types to extensions.
+		$mime_to_extension = [
+			'image/jpeg' => 'jpg',
+			'image/jpg' => 'jpg',
+			'image/png' => 'png',
+			'image/gif' => 'gif',
+			'image/webp' => 'webp',
+			'image/svg+xml' => 'svg',
+			'image/bmp' => 'bmp',
+			'image/tiff' => 'tiff',
+		];
+
+		// Return detected extension or default to jpg.
+		return isset( $mime_to_extension[ $mime_type ] ) ? $mime_to_extension[ $mime_type ] : 'jpg';
+	}
+
+	/**
+	 * Find existing avatar file with any common extension.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $base_filename Base filename without extension.
+	 * @return string|false Existing filename with extension, or false if not found.
+	 */
+	private function find_existing_avatar_file( $base_filename ) {
+
+		// Common image extensions to check.
+		$extensions = [ 'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff' ];
+
+		// Check each extension.
+		foreach ( $extensions as $ext ) {
+			$filename = $base_filename . '.' . $ext;
+			$file_path = $this->get_base_path() . '/' . $filename;
+
+			if ( file_exists( $file_path ) ) {
+				return $filename;
+			}
+		}
+
+		return false;
 	}
 }
