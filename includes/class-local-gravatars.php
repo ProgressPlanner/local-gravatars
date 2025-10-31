@@ -164,7 +164,8 @@ class LocalGravatars {
 
 		// If the gravatars folder doesn't exist, create it.
 		if ( ! file_exists( $this->get_base_path() ) ) {
-			$this->get_filesystem()->mkdir( $this->get_base_path(), FS_CHMOD_DIR );
+			// Use wp_mkdir_p to ensure the directory and any parent directories are created.
+			wp_mkdir_p( $this->get_base_path() );
 		}
 
 		// Get the base filename without extension.
@@ -205,6 +206,10 @@ class LocalGravatars {
 			// Move temp file to final destination.
 			$success = $this->get_filesystem()->move( $tmp_path, $path, true );
 			if ( ! $success ) {
+				// Cleanup temporary file if move fails.
+				if ( file_exists( $tmp_path ) && is_file( $tmp_path ) ) {
+					$this->get_filesystem()->delete( $tmp_path );
+				}
 				return $this->get_fallback_url();
 			}
 
@@ -227,7 +232,7 @@ class LocalGravatars {
 		if ( ! $this->base_path ) {
 			$this->base_path = apply_filters(
 				'get_local_gravatars_base_path',
-				$this->get_filesystem()->wp_content_dir() . '/gravatars'
+				untrailingslashit( $this->get_filesystem()->wp_content_dir() ) . '/gravatars'
 			);
 		}
 		return $this->base_path;
