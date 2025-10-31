@@ -165,7 +165,9 @@ class LocalGravatars {
 		// If the gravatars folder doesn't exist, create it.
 		if ( ! file_exists( $this->get_base_path() ) ) {
 			// Use wp_mkdir_p to ensure the directory and any parent directories are created.
-			wp_mkdir_p( $this->get_base_path() );
+			if ( ! wp_mkdir_p( $this->get_base_path() ) ) {
+				return $this->get_fallback_url();
+			}
 		}
 
 		// Get the base filename without extension.
