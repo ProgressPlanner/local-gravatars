@@ -182,6 +182,11 @@ class LocalGravatars {
 			return $this->get_fallback_url();
 		}
 
+		// Additional security check: ensure no directory traversal sequences remain.
+		if ( strpos( $base_filename, '..' ) !== false || strpos( $base_filename, '/' ) !== false || strpos( $base_filename, '\\' ) !== false ) {
+			return $this->get_fallback_url();
+		}
+
 		// Check if the file already exists with any common extension.
 		$existing_file = $this->find_existing_avatar_file( $base_filename );
 		if ( $existing_file ) {
