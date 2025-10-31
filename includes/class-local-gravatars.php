@@ -57,7 +57,7 @@ class LocalGravatars {
 	 * @since 1.1.3
 	 */
 	const ALLOWED_EXTENSIONS = [
-		'jpg'  => 'image/jpeg',
+		'jpg'  => 'image/jpg',
 		'jpeg' => 'image/jpeg',
 		'png'  => 'image/png',
 		'gif'  => 'image/gif',
