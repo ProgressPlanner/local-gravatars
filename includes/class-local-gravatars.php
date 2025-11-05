@@ -31,15 +31,6 @@ class LocalGravatars {
 	protected $base_path;
 
 	/**
-	 * Subfolder name.
-	 *
-	 * @access protected
-	 * @since 1.1.0
-	 * @var string
-	 */
-	protected $subfolder_name;
-
-	/**
 	 * Base URL.
 	 *
 	 * @access protected
@@ -49,28 +40,35 @@ class LocalGravatars {
 	protected $base_url;
 
 	/**
-	 * The gravatars folder.
-	 *
-	 * @access protected
-	 * @since 1.1.0
-	 * @var string
-	 */
-	protected $gravatars_folder;
-
-	/**
 	 * Cleanup routine frequency.
 	 */
 	const CLEANUP_FREQUENCY = 'weekly';
 
 	/**
-	 * Maxiumum process seconds.
+	 * Maximum process seconds.
 	 *
 	 * @since 1.0
 	 */
 	const MAX_PROCESS_TIME = 5;
 
 	/**
-	 * Start tim of all processes.
+	 * Allowed image file extensions mapped to their MIME types.
+	 *
+	 * @since 1.1.3
+	 */
+	const ALLOWED_EXTENSIONS = [
+		'jpg'  => 'image/jpg',
+		'jpeg' => 'image/jpeg',
+		'png'  => 'image/png',
+		'gif'  => 'image/gif',
+		'webp' => 'image/webp',
+		'svg'  => 'image/svg+xml',
+		'bmp'  => 'image/bmp',
+		'tiff' => 'image/tiff',
+	];
+
+	/**
+	 * Start time of all processes.
 	 *
 	 * @static
 	 *
@@ -96,6 +94,19 @@ class LocalGravatars {
 	private static $has_stopped = false;
 
 	/**
+	 * Cache for existing avatar file lookups.
+	 *
+	 * @static
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @var array
+	 */
+	private static $file_cache = [];
+
+	/**
 	 * Constructor.
 	 *
 	 * Get a new instance of the object for a new URL.
@@ -106,10 +117,30 @@ class LocalGravatars {
 	 */
 	public function __construct( $url = '' ) {
 		$this->remote_url = $url;
+	}
+
+	/**
+	 * Initialize hooks and schedules.
+	 *
+	 * Should be called once during plugin initialization.
+	 *
+	 * @access public
+	 * @since 1.1.3
+	 * @return void
+	 */
+	public static function init() {
+		static $initialized = false;
+
+		if ( $initialized ) {
+			return;
+		}
+
+		$initialized = true;
 
 		// Add a cleanup routine.
-		$this->schedule_cleanup();
-		add_action( 'delete_gravatars_folder', array( $this, 'delete_gravatars_folder' ) );
+		$instance = new self();
+		$instance->schedule_cleanup();
+		add_action( 'delete_gravatars_folder', array( $instance, 'delete_gravatars_folder' ) );
 	}
 
 	/**
@@ -126,37 +157,75 @@ class LocalGravatars {
 			return $this->get_fallback_url();
 		}
 
+		// Validate that this is a Gravatar URL.
+		if ( ! $this->is_valid_gravatar_url( $this->remote_url ) ) {
+			return $this->get_fallback_url();
+		}
+
 		// If the gravatars folder doesn't exist, create it.
 		if ( ! file_exists( $this->get_base_path() ) ) {
-			$this->get_filesystem()->mkdir( $this->get_base_path(), FS_CHMOD_DIR );
+			// Use wp_mkdir_p to ensure the directory and any parent directories are created.
+			if ( ! wp_mkdir_p( $this->get_base_path() ) ) {
+				return $this->get_fallback_url();
+			}
 		}
 
-		// Get the filename.
-		$filename = basename( wp_parse_url( $this->remote_url, PHP_URL_PATH ) );
+		// Get the base filename without extension.
+		$base_filename = basename( wp_parse_url( $this->remote_url, PHP_URL_PATH ) );
 
-		$path = $this->get_base_path() . '/' . $filename;
+		// Remove any existing extension to ensure we detect the correct one.
+		$base_filename = pathinfo( $base_filename, PATHINFO_FILENAME );
 
-		// Check if the file already exists.
-		if ( ! file_exists( $path ) ) {
+		// Sanitize the filename to prevent directory traversal.
+		$base_filename = sanitize_file_name( $base_filename );
 
-			// require file.php if the download_url function doesn't exist.
-			if ( ! function_exists( 'download_url' ) ) {
-				require_once wp_normalize_path( ABSPATH . '/wp-admin/includes/file.php' );
-			}
+		// Early exit if sanitization removed everything.
+		if ( empty( $base_filename ) ) {
+			return $this->get_fallback_url();
+		}
 
-			// Download file to temporary location.
-			$tmp_path = download_url( $this->remote_url );
+		// Additional security check: ensure no directory traversal sequences remain.
+		if ( strpos( $base_filename, '..' ) !== false || strpos( $base_filename, '/' ) !== false || strpos( $base_filename, '\\' ) !== false ) {
+			return $this->get_fallback_url();
+		}
 
-			// Make sure there were no errors.
-			if ( ! is_wp_error( $tmp_path ) ) {
-				// Move temp file to final destination.
-				$success = $this->get_filesystem()->move( $tmp_path, $path, true );
-				if ( ! $success ) {
-					return $this->get_fallback_url();
+		// Check if the file already exists with any common extension.
+		$existing_file = $this->find_existing_avatar_file( $base_filename );
+		if ( $existing_file ) {
+			return $this->get_base_url() . '/' . $existing_file;
+		}
+
+		// require file.php if the download_url function doesn't exist.
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once wp_normalize_path( ABSPATH . '/wp-admin/includes/file.php' );
+		}
+
+		// Download file to temporary location.
+		$tmp_path = download_url( $this->remote_url );
+
+		// Make sure there were no errors.
+		if ( ! is_wp_error( $tmp_path ) ) {
+			// Detect file extension from the downloaded file.
+			$file_extension = $this->detect_file_extension( $tmp_path );
+			$filename = $base_filename . '.' . $file_extension;
+			$path = $this->get_base_path() . '/' . $filename;
+
+			// Move temp file to final destination.
+			$success = $this->get_filesystem()->move( $tmp_path, $path, true );
+			if ( ! $success ) {
+				// Cleanup temporary file if move fails.
+				if ( file_exists( $tmp_path ) && is_file( $tmp_path ) ) {
+					$this->get_filesystem()->delete( $tmp_path );
 				}
+				return $this->get_fallback_url();
 			}
+
+			// Return the URL to the local file.
+			return $this->get_base_url() . '/' . $filename;
 		}
-		return $this->get_base_url() . '/' . $filename;
+
+		// If we got here, download failed.
+		return $this->get_fallback_url();
 	}
 
 	/**
@@ -170,7 +239,7 @@ class LocalGravatars {
 		if ( ! $this->base_path ) {
 			$this->base_path = apply_filters(
 				'get_local_gravatars_base_path',
-				$this->get_filesystem()->wp_content_dir() . '/gravatars'
+				untrailingslashit( $this->get_filesystem()->wp_content_dir() ) . '/gravatars'
 			);
 		}
 		return $this->base_path;
@@ -276,7 +345,7 @@ class LocalGravatars {
 			return false;
 		}
 
-		// Falback to true.
+		// Fallback to true.
 		return true;
 	}
 
@@ -304,5 +373,111 @@ class LocalGravatars {
 	 */
 	public function get_fallback_url() {
 		return apply_filters( 'get_local_gravatars_fallback_url', $this->remote_url );
+	}
+
+	/**
+	 * Validate if a URL is a valid Gravatar URL.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $url The URL to validate.
+	 * @return bool True if valid Gravatar URL, false otherwise.
+	 */
+	private function is_valid_gravatar_url( $url ) {
+		// Parse the URL.
+		$parsed_url = wp_parse_url( $url );
+
+		// Check if we have a host.
+		if ( ! isset( $parsed_url['host'] ) ) {
+			return false;
+		}
+
+		$host = strtolower( $parsed_url['host'] );
+
+		// Check if the host is gravatar.com or any subdomain (*.gravatar.com).
+		// This covers: gravatar.com, www.gravatar.com, secure.gravatar.com, 0-9.gravatar.com, etc.
+		$is_gravatar = ( 'gravatar.com' === $host || substr( $host, -13 ) === '.gravatar.com' );
+
+		// Allow filtering for edge cases.
+		return apply_filters( 'local_gravatars_is_valid_url', $is_gravatar, $url, $host );
+	}
+
+	/**
+	 * Detect file extension from downloaded file.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $file_path Path to the downloaded file.
+	 * @return string File extension (defaults to 'jpg' if detection fails).
+	 */
+	private function detect_file_extension( $file_path ) {
+
+		// Early exit if file doesn't exist.
+		if ( ! file_exists( $file_path ) ) {
+			return 'jpg';
+		}
+
+		// Get file info using finfo.
+		$finfo = finfo_open( FILEINFO_MIME_TYPE );
+
+		// Check if finfo_open failed.
+		if ( false === $finfo ) {
+			return 'jpg';
+		}
+
+		$mime_type = finfo_file( $finfo, $file_path );
+		finfo_close( $finfo );
+
+		// Check if finfo_file failed.
+		if ( false === $mime_type ) {
+			return 'jpg';
+		}
+
+		// Get MIME type to extension mapping by flipping the constant.
+		$mime_to_extension = array_flip( self::ALLOWED_EXTENSIONS );
+
+		// Return detected extension or default to jpg.
+		return isset( $mime_to_extension[ $mime_type ] ) ? $mime_to_extension[ $mime_type ] : 'jpg';
+	}
+
+	/**
+	 * Find existing avatar file with any common extension.
+	 *
+	 * Caches results per request to avoid redundant file_exists() calls
+	 * when multiple avatars from the same user appear on a page.
+	 *
+	 * @access private
+	 *
+	 * @since 1.1.3
+	 *
+	 * @param string $base_filename Base filename without extension.
+	 * @return string|false Existing filename with extension, or false if not found.
+	 */
+	private function find_existing_avatar_file( $base_filename ) {
+
+		// Check cache first.
+		if ( isset( self::$file_cache[ $base_filename ] ) ) {
+			return self::$file_cache[ $base_filename ];
+		}
+
+		// Check each allowed extension.
+		foreach ( array_keys( self::ALLOWED_EXTENSIONS ) as $ext ) {
+			$filename = $base_filename . '.' . $ext;
+			$file_path = $this->get_base_path() . '/' . $filename;
+
+			if ( file_exists( $file_path ) ) {
+				// Cache the result.
+				self::$file_cache[ $base_filename ] = $filename;
+				return $filename;
+			}
+		}
+
+		// Cache the negative result.
+		self::$file_cache[ $base_filename ] = false;
+		return false;
 	}
 }
