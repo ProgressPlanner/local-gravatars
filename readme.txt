@@ -1,8 +1,8 @@
 === Local Gravatars ===
 Contributors: aristath
 Requires at least: 5.5
-Tested up to: 6.8
-Requires PHP: 5.6
+Tested up to: 6.9
+Requires PHP: 7.4
 Stable tag: 1.1.2
 License: MIT
 License URI: https://opensource.org/licenses/MIT

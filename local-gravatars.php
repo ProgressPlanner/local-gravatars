@@ -4,7 +4,7 @@
  * Plugin URI: https://github.com/aristath/local-gravatars
  * Description: Locally host gravatars - for the privacy conscious
  * Requires at least: 5.3
- * Requires PHP: 5.6
+ * Requires PHP: 7.4
  * Version: 1.1.3
  * Author: Ari Stathopoulos
  * Text Domain: local-gravatars
