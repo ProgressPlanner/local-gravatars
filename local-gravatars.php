@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Local Gravatars
- * Plugin URI: https://github.com/aristath/local-gravatars
- * Description: Locally host gravatars - for the privacy conscious
+ * Plugin URI: https://github.com/ProgressPlanner/local-gravatars
+ * Description: Host Gravatar images locally for better privacy and performance.
  * Requires at least: 5.3
  * Requires PHP: 7.4
  * Version: 1.1.3
