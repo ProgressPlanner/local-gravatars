@@ -1,0 +1,14 @@
+{
+    "name": "progressplanner/local-gravatars",
+    "description": "Locally host gravatars - for the privacy conscious.",
+    "type": "wordpress-plugin",
+    "homepage": "https://github.com/ProgressPlanner/local-gravatars",
+    "license": "MIT",
+    "require": {
+        "php": ">=7.4"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
